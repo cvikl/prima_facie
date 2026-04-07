@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="sl" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prima Facie — Jadek & Pensa</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='12' fill='black'/><text x='50' y='68' font-family='Arial,sans-serif' font-size='42' font-weight='bold' fill='white' text-anchor='middle'>PF</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:wght@400&family=DM+Serif+Text:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        serif: ['DM Serif Display', 'serif'],
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f5f7ff',
+                            100: '#ebf0fe',
+                            200: '#d6e0fd',
+                            500: '#4f6ef7',
+                            600: '#3b5ce6',
+                            700: '#2d4ad4',
+                            800: '#1e3a8a',
+                            900: '#111827'
+                        },
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        h1, h2, h3, h4, .font-title { font-family: 'DM Serif Display', serif !important; font-weight: 400 !important; letter-spacing: -0.01em; }
+    </style>
+</head>
+<body class="h-full font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Helpers ---
+        const urgencyLabel = { high: 'Visoka', medium: 'Srednja', low: 'Nizka' };
+        const urgencyColor = {
+            high: 'bg-red-500/10 text-red-600 ring-red-500/20',
+            medium: 'bg-amber-500/10 text-amber-600 ring-amber-500/20',
+            low: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20'
+        };
+        const statusLabel = { NEW: 'Nov', BLOCKED: 'Blokiran', IN_REVIEW: 'V pregledu', APPROVED: 'Odobren', SENT: 'Poslan', CLOSED: 'Zaključen' };
+        const statusColor = {
+            NEW: 'bg-blue-500/10 text-blue-600 ring-blue-500/20',
+            BLOCKED: 'bg-red-500/10 text-red-700 ring-red-500/20',
+            IN_REVIEW: 'bg-violet-500/10 text-violet-600 ring-violet-500/20',
+            APPROVED: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20',
+            SENT: 'bg-slate-500/10 text-slate-600 ring-slate-500/20',
+            CLOSED: 'bg-slate-400/10 text-slate-400 ring-slate-400/20'
+        };
+        const amlColor = {
+            GREEN: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20',
+            ORANGE: 'bg-orange-500/10 text-orange-600 ring-orange-500/20',
+            RED: 'bg-red-500/10 text-red-600 ring-red-500/20'
+        };
+        const conflictColor = {
+            none: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/20',
+            warning: 'bg-amber-500/10 text-amber-600 ring-amber-500/20',
+            conflict: 'bg-red-500/10 text-red-600 ring-red-500/20'
+        };
+        const conflictLabel = { none: 'Ni konflikta', warning: 'Opozorilo', conflict: 'Konflikt' };
+        const workloadColor = (w) => w <= 1.5 ? 'text-emerald-600' : w <= 2.5 ? 'text-amber-500' : 'text-red-500';
+        const workloadDot = (w) => w <= 1.5 ? 'bg-emerald-500' : w <= 2.5 ? 'bg-amber-500' : 'bg-red-500';
+
+        // --- Suits Character Avatar Mapping ---
+        const MALE_AVATAR = '/static/avatars/harvey.jpg';
+        const FEMALE_AVATAR = '/static/avatars/rachel.jpg';
+        // Anonymized — update with real first names in private deployment
+        const FEMALE_NAMES = ['Lawyer A', 'Lawyer F', 'Lawyer I', 'Lawyer J', 'Lawyer K', 'Lawyer N', 'Lawyer O', 'Lawyer Q'];
+        function getAvatar(lawyerName) {
+            const firstName = lawyerName.split(' ')[0];
+            return FEMALE_NAMES.includes(firstName) ? FEMALE_AVATAR : MALE_AVATAR;
+        }
+
+        // --- Attorney profile links (anonymized for public repo) ---
+        const ATTORNEY_URLS = {
+            // Replace with real attorney names and profile URLs in private deployment
+        };
+
+        function timeAgo(dateStr) {
+            const d = new Date(dateStr);
+            const now = new Date();
+            const diff = Math.floor((now - d) / 1000);
+            if (diff < 60) return 'pravkar';
+            if (diff < 3600) return `pred ${Math.floor(diff/60)} min`;
+            if (diff < 86400) return `pred ${Math.floor(diff/3600)} h`;
+            return `pred ${Math.floor(diff/86400)} d`;
+        }
+
+        // --- Badge Component ---
+        function Badge({ children, variant = 'default', className = '' }) {
+            return (
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${variant} ${className}`}>
+                    {children}
+                </span>
+            );
+        }
+
+        // --- Header Component ---
+        function Header({ onHome }) {
+            return (
+                <nav className="bg-black shadow-xl">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="flex justify-between h-16 items-center">
+                            <button onClick={onHome} className="flex items-center gap-4 hover:opacity-80 transition">
+                                <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shadow-sm">
+                                    <span className="text-black font-bold text-sm">PF</span>
+                                </div>
+                                <h1 className="text-white text-2xl font-title tracking-tight">Prima Facie</h1>
+                                <span className="text-gray-400 text-sm hidden sm:block">|</span>
+                                <span className="text-gray-400 text-sm hidden sm:block">Jadek & Pensa</span>
+                            </button>
+                            <div className="w-7 h-7 bg-black rounded-full flex items-center justify-center cursor-pointer hover:bg-gray-800 transition ring-2 ring-white">
+                                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                </nav>
+            );
+        }
+
+        // --- Stats Bar Component ---
+        function StatsBar({ tickets }) {
+            const total = tickets.length;
+            const newT = tickets.filter(t => t.status === 'NEW').length;
+            const urgent = tickets.filter(t => t.urgency === 'high').length;
+            const conflicts = tickets.filter(t => t.conflict_status === 'conflict').length;
+            const amlRed = tickets.filter(t => t.aml_risk === 'RED').length;
+
+            const stats = [
+                { label: 'Skupaj zadev', value: total, color: 'text-gray-900' },
+                { label: 'Novih', value: newT, color: 'text-blue-600' },
+                { label: 'Nujnih', value: urgent, color: 'text-red-600' },
+                { label: 'Konflikti', value: conflicts, color: conflicts ? 'text-red-600' : 'text-emerald-600' },
+                { label: 'AML visoko tveg.', value: amlRed, color: amlRed ? 'text-red-600' : 'text-emerald-600' },
+            ];
+
+            return (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                    {stats.map((s, i) => (
+                        <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
+                            <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                            <p className="text-xs text-gray-500 mt-1">{s.label}</p>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        // --- Filters Component ---
+        function Filters({ statusFilter, setStatusFilter, urgencyFilter, setUrgencyFilter }) {
+            return (
+                <div className="flex flex-wrap gap-3 mb-6">
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="rounded-full border-gray-200 text-sm px-4 py-2.5 border bg-white focus:ring-2 focus:ring-black focus:border-transparent shadow-sm"
+                    >
+                        <option value="">Vsi statusi</option>
+                        <option value="NEW">Nov</option>
+                        <option value="IN_REVIEW">V pregledu</option>
+                        <option value="APPROVED">Odobren</option>
+                        <option value="SENT">Poslan</option>
+                        <option value="CLOSED">Zaključen</option>
+                    </select>
+                    <select
+                        value={urgencyFilter}
+                        onChange={(e) => setUrgencyFilter(e.target.value)}
+                        className="rounded-full border-gray-200 text-sm px-4 py-2.5 border bg-white focus:ring-2 focus:ring-black focus:border-transparent shadow-sm"
+                    >
+                        <option value="">Vse nujnosti</option>
+                        <option value="high">Visoka</option>
+                        <option value="medium">Srednja</option>
+                        <option value="low">Nizka</option>
+                    </select>
+                </div>
+            );
+        }
+
+        // --- Ticket Card Component ---
+        function TicketCard({ ticket, onClick }) {
+            return (
+                <div
+                    onClick={onClick}
+                    className="bg-white rounded-2xl border border-gray-100 shadow-md hover:shadow-xl hover:shadow-gray-200/80 hover:border-gray-200 cursor-pointer transition-all duration-200 group p-5"
+                >
+                    <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="text-lg font-title text-gray-900 group-hover:text-black transition truncate">{ticket.customer_name || 'Neznana stranka'}</span>
+                                {ticket.customer_firm && (
+                                    <span className="text-gray-400 text-sm truncate hidden sm:inline">— {ticket.customer_firm}</span>
+                                )}
+                            </div>
+                            <p className="text-sm text-gray-500 line-clamp-2 mb-3">{ticket.summary || 'Brez povzetka'}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {ticket.field && (
+                                    <Badge variant="bg-gray-100 text-gray-700 ring-gray-200">{ticket.field}</Badge>
+                                )}
+                                <Badge variant={statusColor[ticket.status]}>{statusLabel[ticket.status] || ticket.status}</Badge>
+                                <Badge variant={urgencyColor[ticket.urgency]}>{urgencyLabel[ticket.urgency] || ticket.urgency}</Badge>
+                            </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                            <span className="text-xs text-gray-400">{timeAgo(ticket.created_at)}</span>
+                            <div className="flex gap-1.5">
+                                <Badge variant={conflictColor[ticket.conflict_status]}>{conflictLabel[ticket.conflict_status]}</Badge>
+                                <Badge variant={amlColor[ticket.aml_risk]}>AML: {ticket.aml_risk}</Badge>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Ticket List Component ---
+        function TicketList({ tickets, onSelectTicket }) {
+            if (!tickets.length) {
+                return (
+                    <div className="text-center py-20 text-gray-400">
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span className="text-2xl">&#128237;</span>
+                        </div>
+                        <p className="text-lg font-medium">Ni zadev</p>
+                        <p className="text-sm mt-1">Dodajte novo poizvedbo stranke</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="space-y-3">
+                    {tickets.map(ticket => (
+                        <TicketCard key={ticket.id} ticket={ticket} onClick={() => onSelectTicket(ticket.id)} />
+                    ))}
+                </div>
+            );
+        }
+
+        // --- Mini-TFL: Legal Intelligence Component ---
+        function LegalIntelligence({ refs }) {
+            if (!refs) return <p className="text-sm text-gray-400">Ni pravnih referenc</p>;
+
+            // Support old list format
+            if (Array.isArray(refs)) {
+                return (
+                    <div>
+                        {refs.map((ref, i) => (
+                            <div key={i} className="mb-4 last:mb-0">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Badge variant="bg-brand-500/10 text-brand-700 ring-brand-500/20">{ref.abbreviation || ''}</Badge>
+                                    <span className="text-sm font-medium text-gray-900">{ref.law}</span>
+                                </div>
+                                {(ref.articles || []).map((a, j) => (
+                                    <div key={j} className="flex items-start gap-2 ml-4 py-1">
+                                        <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded shrink-0">čl. {a.number}</span>
+                                        <span className="text-xs text-gray-700">{a.title}{a.note ? ` — ${a.note}` : ''}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                );
+            }
+
+            const legislation = refs.legislation || [];
+            const citations = (refs.citations || []).filter(c => c.source === 'email_citation');
+            const kwArticles = refs.keyword_articles || [];
+            const courtDecisions = refs.court_decisions || [];
+            const crossRefs = refs.cross_references || {};
+            const crossKeys = Object.keys(crossRefs);
+
+            return (
+                <div className="space-y-5">
+                    {/* 1. Legislation with expandable article content */}
+                    {legislation.length > 0 && (
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                                Zakonodaja
+                            </h4>
+                            {legislation.map((ref, i) => (
+                                <div key={i} className="mb-3 last:mb-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Badge variant="bg-brand-500/10 text-brand-700 ring-brand-500/20">{ref.abbreviation || ''}</Badge>
+                                        <span className="text-sm font-medium text-gray-900">{ref.law}</span>
+                                    </div>
+                                    {(ref.articles || []).map((a, j) => (
+                                        <details key={j} className="ml-4 my-1 group">
+                                            <summary className="flex items-start gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5 text-left">
+                                                <span className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded shrink-0">čl. {a.number}</span>
+                                                <span className="text-xs text-gray-700">
+                                                    {a.title}
+                                                    {a.note && <em className="text-gray-400"> — {a.note}</em>}
+                                                    {a.deadline && <strong className="text-red-600 ml-1"> {a.deadline}</strong>}
+                                                </span>
+                                            </summary>
+                                            {a.content && (
+                                                <div className="ml-12 mt-1 mb-2 p-2.5 bg-blue-50 rounded-xl border border-blue-100 text-xs text-gray-700 leading-relaxed">
+                                                    {a.content}
+                                                </div>
+                                            )}
+                                        </details>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 2. Citations detected in email */}
+                    {citations.length > 0 && (
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                                Zaznane reference v e-pošti
+                            </h4>
+                            {citations.map((c, i) => (
+                                <div key={i} className="ml-4 my-1">
+                                    <div className="flex items-start gap-2 py-1">
+                                        <span className="text-xs font-mono bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded shrink-0">{c.law} čl. {c.article}</span>
+                                        <span className="text-xs text-gray-700">{c.title || 'Ni v bazi'}</span>
+                                    </div>
+                                    {c.content && (
+                                        <div className="ml-8 mb-1 p-2.5 bg-yellow-50 rounded-xl border border-yellow-100 text-xs text-gray-600">{c.content}</div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 3. Keyword-triggered articles */}
+                    {kwArticles.length > 0 && (
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                Dodatni členi (na podlagi dejstev)
+                            </h4>
+                            {kwArticles.map((a, i) => (
+                                <details key={i} className="ml-4 my-1">
+                                    <summary className="flex items-start gap-2 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5 text-left">
+                                        <span className="text-xs font-mono bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded shrink-0">{a.law} čl. {a.number}</span>
+                                        <span className="text-xs text-gray-700">{a.title} <em className="text-gray-400">(ključna beseda: "{a.triggered_by}")</em></span>
+                                    </summary>
+                                    {a.content && (
+                                        <div className="ml-12 mt-1 mb-2 p-2.5 bg-violet-50 rounded-xl border border-violet-100 text-xs text-gray-700 leading-relaxed">{a.content}</div>
+                                    )}
+                                </details>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 4. Court decisions */}
+                    {courtDecisions.length > 0 && (
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>
+                                Relevantna sodna praksa
+                            </h4>
+                            {courtDecisions.map((d, i) => (
+                                <details key={i} className="ml-4 my-2">
+                                    <summary className="cursor-pointer hover:bg-gray-50 rounded px-1 py-1 text-left">
+                                        <span className="text-xs font-mono bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">{d.case_number}</span>
+                                        <span className="text-xs text-gray-500 ml-1">{d.court}</span>
+                                        <p className="text-xs font-medium text-gray-900 mt-1 ml-1">{d.title}</p>
+                                    </summary>
+                                    <div className="ml-6 mt-1 mb-2 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                                        <p className="text-xs text-gray-700 leading-relaxed">{d.summary}</p>
+                                        {d.key_articles && (
+                                            <div className="mt-2 flex gap-1 flex-wrap">
+                                                {d.key_articles.map((k, j) => (
+                                                    <span key={j} className="text-xs font-mono bg-gray-100 text-gray-600 px-1 py-0.5 rounded">{k}</span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </details>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* 5. Cross-references */}
+                    {crossKeys.length > 0 && (
+                        <div>
+                            <h4 className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1.5">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                                Navzkrižne reference
+                            </h4>
+                            <div className="ml-4 space-y-1">
+                                {crossKeys.map((law, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-xs">
+                                        <span className="font-mono bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-medium">{law}</span>
+                                        <span className="text-gray-400">→</span>
+                                        {crossRefs[law].map((r, j) => (
+                                            <span key={j} className="font-mono bg-gray-50 text-gray-500 px-1.5 py-0.5 rounded">{r}</span>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- Similar Tickets Component ---
+        function SimilarTickets({ tickets, onOpenTicket }) {
+            if (!tickets || !tickets.length) {
+                return <p className="text-sm text-gray-400">Ni podobnih preteklih primerov</p>;
+            }
+            return (
+                <div className="space-y-2">
+                    {tickets.map((s, i) => (
+                        <div
+                            key={i}
+                            onClick={() => onOpenTicket(s.id)}
+                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-brand-50 transition"
+                        >
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-900">#{s.id}</span>
+                                    <Badge variant="bg-gray-100 text-gray-700 ring-gray-200">{s.field || ''}</Badge>
+                                </div>
+                                <p className="text-xs text-gray-600 mt-1 truncate">{s.summary || ''}</p>
+                            </div>
+                            <span className={`text-sm font-semibold ml-3 shrink-0 ${s.similarity > 0.5 ? 'text-emerald-600' : s.similarity > 0.3 ? 'text-amber-500' : 'text-gray-400'}`}>
+                                {Math.round(s.similarity * 100)}%
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        // --- Ticket Detail Component ---
+        function TicketDetail({ ticket, onBack, onUpdate, onSend, onOpenTicket }) {
+            const [draftEmail, setDraftEmail] = useState(ticket.draft_email || '');
+            const [editingDraft, setEditingDraft] = useState(false);
+            const [saving, setSaving] = useState(false);
+
+            const isBlocked = ticket.conflict_status === 'conflict';
+            const canApprove = !isBlocked && ticket.status === 'IN_REVIEW';
+            const canSend = ticket.status === 'APPROVED';
+
+            const saveDraft = async () => {
+                setSaving(true);
+                await fetch(`/tickets/${ticket.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ draft_email: draftEmail }),
+                });
+                setSaving(false);
+                alert('Osnutek shranjen.');
+            };
+
+            const indicatorLabels = {
+                high_risk_jurisdiction: 'Visoko tvegana jurisdikcija',
+                complex_ownership: 'Kompleksna lastniška struktura',
+                cash_intensive: 'Gotovinsko intenzivno',
+                pep_involved: 'Politično izpostavljena oseba',
+                sanctioned_country: 'Sankcionirana država',
+                opaque_fund_source: 'Nejasen izvor sredstev',
+                novel_structure: 'Neobičajna struktura',
+            };
+
+            return (
+                <div className="fade-in">
+                    {/* Header */}
+                    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+                        <div className="flex items-start justify-between">
+                            <div>
+                                <h2 className="text-3xl font-title text-gray-900">{ticket.customer_name || 'Neznana stranka'}</h2>
+                                <p className="text-gray-500 mt-1">{ticket.customer_firm || ''} {ticket.sender_email ? `· ${ticket.sender_email}` : ''}</p>
+                            </div>
+                            <div className="flex gap-2 items-center">
+                                {ticket.field && (
+                                    <Badge variant="bg-gray-100 text-gray-700 ring-gray-200" className="text-sm px-3 py-1.5">{ticket.field}</Badge>
+                                )}
+                                {!isBlocked && (
+                                    <Badge variant={statusColor[ticket.status]} className="text-sm px-3 py-1.5">{statusLabel[ticket.status]}</Badge>
+                                )}
+                                {isBlocked && (
+                                    <Badge variant="bg-red-500/10 text-red-600 ring-red-500/20" className="text-sm px-3 py-1.5">Blokirano</Badge>
+                                )}
+                                <Badge variant={urgencyColor[ticket.urgency]} className="text-sm px-3 py-1.5">{urgencyLabel[ticket.urgency]}</Badge>
+                            </div>
+                        </div>
+                        {isBlocked && (
+                            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium flex items-center gap-2">
+                                BLOKIRANO: Odkrit konflikt interesov. Odobritev in pošiljanje onemogočeno do razrešitve.
+                            </div>
+                        )}
+                    </div>
+
+                    {/* TOP ROW: Original email + Proposed response */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        {/* LEFT: Original customer email */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-4">Izvorna e-pošta stranke</h3>
+                            <div className="bg-gray-50 rounded-xl p-4 max-h-[700px] overflow-y-auto">
+                                <pre className="text-sm text-gray-700 whitespace-pre-wrap">{ticket.raw_email || 'Ni podatkov o izvorni e-pošti.'}</pre>
+                            </div>
+                        </div>
+
+                        {/* RIGHT: Proposed response */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-xl font-title text-gray-900">Predlagan odgovor</h3>
+                                <button
+                                    onClick={() => setEditingDraft(!editingDraft)}
+                                    className="text-xs px-3 py-1.5 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition font-medium"
+                                >
+                                    {editingDraft ? 'Predogled' : 'Uredi'}
+                                </button>
+                            </div>
+                            {editingDraft ? (
+                                <textarea
+                                    value={draftEmail}
+                                    onChange={(e) => setDraftEmail(e.target.value)}
+                                    rows={24}
+                                    className="w-full rounded-xl border-gray-200 border px-4 py-3 text-sm focus:ring-2 focus:ring-black focus:border-transparent resize-none"
+                                />
+                            ) : (
+                                <div className="bg-gray-50 rounded-xl p-5 max-h-[700px] overflow-y-auto">
+                                    {(() => {
+                                        const lines = (draftEmail || '').split('\n');
+                                        const teamNames = (ticket.assigned_team || []).map(m => m.name);
+                                        const elements = [];
+                                        let i = 0;
+                                        while (i < lines.length) {
+                                            const line = lines[i];
+                                            const matchedMember = teamNames.find(n => line.trim() === n);
+                                            if (matchedMember) {
+                                                const avatar = getAvatar(matchedMember);
+                                                const member = ticket.assigned_team.find(m => m.name === matchedMember);
+                                                const profileUrl = ATTORNEY_URLS[matchedMember];
+                                                elements.push(
+                                                    <div key={`sig-${i}`} className="my-4">
+                                                        <p className="text-sm font-bold text-gray-900">{matchedMember}</p>
+                                                        {member && <p className="text-xs text-gray-500">{(member.fields || []).join(', ')}</p>}
+                                                        <p className="text-xs text-gray-400">Odvetniška pisarna Jadek & Pensa d.o.o.</p>
+                                                        {profileUrl && <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:text-brand-800 underline">{profileUrl}</a>}
+                                                        <img src={avatar} alt={matchedMember} className="w-36 h-44 rounded-xl object-cover shadow-md mt-2" />
+                                                    </div>
+                                                );
+                                                // Skip the "Odvetniška pisarna" line if it follows
+                                                if (i + 1 < lines.length && lines[i + 1].includes('Jadek & Pensa')) {
+                                                    i += 2;
+                                                } else {
+                                                    i++;
+                                                }
+                                            } else {
+                                                elements.push(
+                                                    <span key={`line-${i}`} className="text-sm text-gray-700">
+                                                        {line}
+                                                        {'\n'}
+                                                    </span>
+                                                );
+                                                i++;
+                                            }
+                                        }
+                                        return <pre className="whitespace-pre-wrap font-sans">{elements}</pre>;
+                                    })()}
+                                </div>
+                            )}
+                            <div className="flex gap-3 mt-4 justify-end flex-wrap">
+                                <button
+                                    onClick={saveDraft}
+                                    disabled={saving}
+                                    className="px-5 py-2.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition font-medium"
+                                >
+                                    {saving ? 'Shranjujem...' : 'Shrani osnutek'}
+                                </button>
+                                {ticket.status === 'NEW' && (
+                                    <button onClick={() => onUpdate(ticket.id, 'IN_REVIEW')} className="px-5 py-2.5 text-sm bg-violet-600 text-white rounded-full hover:bg-violet-500 transition font-medium">
+                                        Začni pregled
+                                    </button>
+                                )}
+                                {canApprove && (
+                                    <button onClick={() => onUpdate(ticket.id, 'APPROVED')} className="px-5 py-2.5 text-sm bg-emerald-600 text-white rounded-full hover:bg-emerald-500 transition font-medium">
+                                        Odobri
+                                    </button>
+                                )}
+                                {canSend && (
+                                    <button onClick={() => onSend(ticket.id)} className="px-5 py-2.5 text-sm bg-black text-white rounded-full hover:bg-gray-800 transition font-semibold shadow-sm">
+                                        Pošlji stranki
+                                    </button>
+                                )}
+                                {isBlocked && ticket.status !== 'SENT' && (
+                                    <button disabled className="px-5 py-2.5 text-sm bg-red-100 text-red-400 rounded-full cursor-not-allowed font-medium">
+                                        Blokirano — konflikt
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FIELDS - ordered by importance */}
+                    <div className="space-y-6">
+                        {/* 1. Konflikt interesov */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="text-xl font-title text-gray-900">Konflikt interesov</h3>
+                                <Badge variant={conflictColor[ticket.conflict_status]} className="text-sm px-3 py-1.5">{conflictLabel[ticket.conflict_status]}</Badge>
+                            </div>
+                            <p className="text-sm text-gray-600">{ticket.conflict_details || 'Ni zaznanih konfliktov z obstoječimi strankami.'}</p>
+                            {ticket.opposing_parties?.length > 0 && (
+                                <div className="mt-3">
+                                    <p className="text-xs font-medium text-gray-500 mb-2">Nasprotne stranke:</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {ticket.opposing_parties.map((p, i) => (
+                                            <Badge key={i} variant="bg-gray-100 text-gray-700 ring-gray-200">{p}</Badge>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 2. Roki */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-3">Roki</h3>
+                            {(ticket.deadlines || []).length > 0 ? (
+                                <div className="space-y-2">
+                                    {ticket.deadlines.map((d, i) => (
+                                        <div key={i} className="flex items-center justify-between p-3 bg-red-50 rounded-xl border border-red-100">
+                                            <span className="text-sm font-medium text-red-800">{d.description}</span>
+                                            <span className="text-sm font-bold text-red-600">{d.hours_remaining}h</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-gray-400">Ni zaznanih rokov</p>
+                            )}
+                        </div>
+
+                        {/* 4. Povzetek & dejstva */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-3">Povzetek & dejstva</h3>
+                            <p className="text-sm text-gray-600 mb-4">{ticket.summary || 'Ni povzetka.'}</p>
+                            <h4 className="text-sm font-semibold text-gray-500 mb-2">Ključna dejstva</h4>
+                            {(ticket.key_facts || []).length > 0 ? (
+                                <ul className="space-y-1 list-disc list-inside text-sm text-gray-700">
+                                    {ticket.key_facts.map((f, i) => <li key={i}>{f}</li>)}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-gray-400">Ni ključnih dejstev.</p>
+                            )}
+                        </div>
+
+                        {/* 5. Odprta vprašanja */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-3">Odprta vprašanja za stranko</h3>
+                            {(ticket.unanswered_questions || []).length > 0 ? (
+                                <ul className="space-y-2 list-decimal list-inside text-sm text-gray-700">
+                                    {ticket.unanswered_questions.map((q, i) => <li key={i}>{q}</li>)}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-gray-400">Ni odprtih vprašanj.</p>
+                            )}
+                        </div>
+
+                        {/* 6. Predlagana ekipa */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-3">Predlagana ekipa</h3>
+                            {(ticket.assigned_team || []).length > 0 ? (
+                                <div className="space-y-2">
+                                    {ticket.assigned_team.map((u, i) => (
+                                        <div key={i} className={`flex items-center justify-between p-3 rounded-xl bg-gray-50 ${i === 0 ? 'border-2 border-gray-900 mb-4' : ''}`}>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`${i === 0 ? 'font-bold text-lg text-gray-900' : 'font-medium text-gray-900'}`}>{u.name}</span>
+                                                    <span className="text-sm ml-1 text-gray-400">({u.acronym})</span>
+                                                    {i === 0 && (
+                                                        <Badge variant="bg-gray-900 text-white ring-gray-900" className="ml-2">Vodja · Odgovori</Badge>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs mt-0.5 text-gray-500">{u.fields.join(', ')}</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <span className={`w-2.5 h-2.5 rounded-full ${workloadDot(u.workload)}`}></span>
+                                                <span className={`text-sm font-medium ${workloadColor(u.workload)}`}>{u.workload}/3</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-gray-400">Ekipa še ni določena.</p>
+                            )}
+                        </div>
+
+                        {/* 7. AML / KYC ocena & Potrebna dokumentacija */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="text-xl font-title text-gray-900">AML / KYC ocena</h3>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm text-gray-500">Score: {ticket.aml_score}</span>
+                                    <Badge variant={amlColor[ticket.aml_risk]} className="text-sm px-3 py-1.5">{ticket.aml_risk}</Badge>
+                                </div>
+                            </div>
+                            <div className="space-y-2 mb-6">
+                                {Object.entries(indicatorLabels).map(([key, label]) => {
+                                    const val = (ticket.aml_indicators || {})[key];
+                                    return (
+                                        <div key={key} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                                            <span className="text-sm text-gray-700">{label}</span>
+                                            <span className={`text-sm font-medium ${val ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                {val ? 'DA' : 'NE'}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="border-t-2 border-gray-200 my-6"></div>
+                            <h4 className="text-lg font-title text-gray-900 mb-3">Potrebna dokumentacija</h4>
+                            {(ticket.aml_required_documents || []).length > 0 ? (
+                                <ul className="list-disc list-inside space-y-1">
+                                    {ticket.aml_required_documents.map((d, i) => (
+                                        <li key={i} className="text-sm text-gray-700">{d}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-gray-400">Ni zahtevanih dokumentov.</p>
+                            )}
+                        </div>
+
+                        {/* 8. Ocena stroškov */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-3">Ocena stroškov</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gray-50 rounded-xl p-4">
+                                    <p className="text-xs text-gray-500 mb-1">Ocenjene ure</p>
+                                    <p className="text-xl font-bold text-gray-900">{ticket.estimated_hours_min || '?'} — {ticket.estimated_hours_max || '?'} h</p>
+                                </div>
+                                <div className="bg-gray-50 rounded-xl p-4">
+                                    <p className="text-xs text-gray-500 mb-1">Ocenjeni stroški</p>
+                                    <p className="text-xl font-bold text-gray-900">{ticket.estimated_cost_min?.toLocaleString() || '?'} — {ticket.estimated_cost_max?.toLocaleString() || '?'} €</p>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-3">Kompleksnost: {ticket.complexity}/3 · Urna postavka: 200 €</p>
+                        </div>
+
+                        {/* 9. Podobni pretekli primeri */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <h3 className="text-xl font-title text-gray-900 mb-3">Podobni pretekli primeri</h3>
+                            <SimilarTickets tickets={ticket.similar_tickets} onOpenTicket={onOpenTicket} />
+                        </div>
+
+                        {/* 10. Mini-TFL: Pravna inteligenca */}
+                        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+                            <div className="flex items-center gap-2 mb-4">
+                                <h3 className="text-xl font-title text-gray-900">Pravna inteligenca</h3>
+                            </div>
+                            <LegalIntelligence refs={ticket.legal_references} />
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- New Ticket Modal ---
+        function NewTicketModal({ isOpen, onClose, onSubmit }) {
+            const [email, setEmail] = useState('');
+            const [subject, setSubject] = useState('');
+            const [body, setBody] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setLoading(true);
+                await onSubmit({ sender_email: email, subject, body });
+                setLoading(false);
+                setEmail('');
+                setSubject('');
+                setBody('');
+            };
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <div className="p-8">
+                            <div className="flex justify-between items-center mb-8">
+                                <h2 className="text-2xl font-title text-gray-900">Nova poizvedba stranke</h2>
+                                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-3xl leading-none transition">&times;</button>
+                            </div>
+                            <form onSubmit={handleSubmit} className="space-y-5">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">E-pošta pošiljatelja</label>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        required
+                                        className="w-full rounded-xl border-gray-200 border px-4 py-3 text-sm focus:ring-2 focus:ring-black focus:border-transparent"
+                                        placeholder="stranka@podjetje.si"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Zadeva</label>
+                                    <input
+                                        type="text"
+                                        value={subject}
+                                        onChange={(e) => setSubject(e.target.value)}
+                                        required
+                                        className="w-full rounded-xl border-gray-200 border px-4 py-3 text-sm focus:ring-2 focus:ring-black focus:border-transparent"
+                                        placeholder="Zadeva e-pošte"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Vsebina</label>
+                                    <textarea
+                                        value={body}
+                                        onChange={(e) => setBody(e.target.value)}
+                                        required
+                                        rows={10}
+                                        className="w-full rounded-xl border-gray-200 border px-4 py-3 text-sm focus:ring-2 focus:ring-black focus:border-transparent resize-none"
+                                        placeholder="Vsebina e-pošte stranke..."
+                                    />
+                                </div>
+                                <div className="flex gap-3 justify-end pt-4">
+                                    <button type="button" onClick={onClose} className="px-6 py-3 text-sm text-gray-700 bg-gray-100 rounded-full hover:bg-gray-200 transition font-medium">
+                                        Prekliči
+                                    </button>
+                                    <button type="submit" disabled={loading} className="px-8 py-3 text-sm text-white bg-black rounded-full hover:bg-gray-800 transition font-semibold shadow-sm disabled:opacity-50">
+                                        {loading ? 'Analiziram...' : 'Analiziraj'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Simple Hash Router ---
+        function useHashRouter() {
+            const [hash, setHash] = useState(window.location.hash);
+
+            useEffect(() => {
+                const handleHashChange = () => setHash(window.location.hash);
+                window.addEventListener('hashchange', handleHashChange);
+                return () => window.removeEventListener('hashchange', handleHashChange);
+            }, []);
+
+            const navigate = (path) => {
+                window.location.hash = path;
+            };
+
+            const goBack = () => {
+                window.location.hash = '';
+            };
+
+            const ticketMatch = hash.match(/^#\/tickets\/(\d+)$/);
+            const ticketId = ticketMatch ? parseInt(ticketMatch[1]) : null;
+
+            return { hash, navigate, goBack, ticketId };
+        }
+
+        // --- Main App ---
+        function App() {
+            const [tickets, setTickets] = useState([]);
+            const [selectedTicket, setSelectedTicket] = useState(null);
+            const [statusFilter, setStatusFilter] = useState('');
+            const [urgencyFilter, setUrgencyFilter] = useState('');
+            const [showModal, setShowModal] = useState(false);
+            const { navigate, goBack, ticketId } = useHashRouter();
+
+            const loadTickets = async () => {
+                let url = '/tickets?';
+                if (statusFilter) url += `status=${statusFilter}&`;
+                if (urgencyFilter) url += `urgency=${urgencyFilter}&`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                setTickets(data);
+            };
+
+            const loadTicket = async (id) => {
+                const resp = await fetch(`/tickets/${id}`);
+                const data = await resp.json();
+                setSelectedTicket(data);
+            };
+
+            const openTicket = (id) => {
+                navigate(`/tickets/${id}`);
+                loadTicket(id);
+            };
+
+            const closeTicket = () => {
+                goBack();
+                setSelectedTicket(null);
+                loadTickets();
+            };
+
+            useEffect(() => {
+                if (ticketId) {
+                    loadTicket(ticketId);
+                } else {
+                    setSelectedTicket(null);
+                }
+            }, [ticketId]);
+
+            const updateStatus = async (id, status) => {
+                const resp = await fetch(`/tickets/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status }),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert(err.detail || 'Napaka');
+                    return;
+                }
+                loadTicket(id);
+            };
+
+            const sendTicket = async (id) => {
+                if (!confirm('Ali ste prepričani, da želite poslati e-pošto stranki?')) return;
+                const resp = await fetch(`/tickets/${id}/send`, { method: 'POST' });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert(err.detail || 'Napaka');
+                    return;
+                }
+                loadTicket(id);
+            };
+
+            const submitTicket = async (payload) => {
+                const resp = await fetch('/tickets/ingest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert(err.detail || 'Napaka pri analizi');
+                    return;
+                }
+                const ticket = await resp.json();
+                setShowModal(false);
+                openTicket(ticket.id);
+                loadTickets();
+            };
+
+            useEffect(() => {
+                loadTickets();
+            }, [statusFilter, urgencyFilter]);
+
+            return (
+                <div className="min-h-full">
+                    <Header onHome={goBack} />
+
+                    <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {selectedTicket && ticketId ? (
+                            <TicketDetail
+                                ticket={selectedTicket}
+                                onBack={closeTicket}
+                                onUpdate={updateStatus}
+                                onSend={sendTicket}
+                                onOpenTicket={openTicket}
+                            />
+                        ) : (
+                            <>
+                                <Filters
+                                    statusFilter={statusFilter}
+                                    setStatusFilter={setStatusFilter}
+                                    urgencyFilter={urgencyFilter}
+                                    setUrgencyFilter={setUrgencyFilter}
+                                />
+                                <TicketList
+                                    tickets={tickets}
+                                    onSelectTicket={openTicket}
+                                />
+                            </>
+                        )}
+                    </main>
+
+                    <NewTicketModal
+                        isOpen={showModal}
+                        onClose={() => setShowModal(false)}
+                        onSubmit={submitTicket}
+                    />
+                </div>
+            );
+        }
+
+        // Render
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
